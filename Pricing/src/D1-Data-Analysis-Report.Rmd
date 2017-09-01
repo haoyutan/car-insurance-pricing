@@ -1,0 +1,728 @@
+# D1-Data-Analysis-Report
+
+``` {r preprocessing, echo=FALSE, message=FALSE, warning=FALSE}
+library('xtable')
+library('fBasics')
+data <- read.csv('./ht-d1-v0.3.csv.gz')
+data.clean <- data[data$RISKCODE == 1224 & data$INSUREDMONTH == 12, ]
+nrecords <- nrow(data.clean)
+comcode.sorted <- as.data.frame(sort(table(data.clean$COMCODE), decreasing = TRUE))
+top7com.count <- sum(comcode.sorted[1: 7, ])
+times.min <- min(data.clean$TIMES)
+times.max <- max(data.clean$TIMES)
+times.mean <- mean(data.clean$TIMES)
+times.var <- var(data.clean$TIMES)
+oldcar.count <- sum(data.clean$NEWCARFLAG == 0)
+newcar.count <- sum(data.clean$NEWCARFLAG == 1)
+provincewide.count <- sum(data.clean$RUNAREACODE == 3)
+nationwide.count <- sum(data.clean$RUNAREACODE == 4)
+sechand.count <- sum(data.clean$SECONDHANDCARFLAG == 1)
+sechand.new.count <- sum(data.clean$SECONDHANDCARFLAG == 1
+                         & data.clean$NEWCARFLAG == 1)
+agreeddriver.count <- sum(data.clean$AGREEDRIVERFLAG == 1)
+nonagreeddriver.count <- sum(data.clean$AGREEDRIVERFLAG == 0)
+a.count <- sum(data.clean$AB == 'A')
+ab.count <- sum(data.clean$AB == 'AB')
+comp.count <- sum(data.clean$COMPULSORY == 1)
+noncomp.count <- sum(data.clean$COMPULSORY == 0)
+
+percent <-
+function(x, digits = 2, format = 'f', ...)
+{
+    paste0(formatC(100 * x, format = format, digits = digits, ...), '%')
+}
+
+draw.table <-
+function(df, rowNames, colNames, caption, label)
+{
+    if (!is.na(rowNames))
+        rownames(df) <- rowNames
+    if (!is.na(colNames))
+        colnames(df) <- colNames
+    print(xtable(df, align = rep('c', ncol(df)+1),
+                 caption = caption, label = label),
+          include.rownames = !is.na(rowNames),
+          include.colnames = !is.na(colNames),
+          type = 'html', html.table.attributes = "border = 1, align = 'center'")
+}
+
+plot.d1.avgpay.1 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    avgpay <- s[s > 0] / dat[s > 0, 'TIMES']
+    s <- avgpay
+
+    draw.subfig <- function(s.max, opacity) {
+        ss <- s[s <= s.max]
+        par(mar = c(3, 5, 1, 1))
+        plot(ss, pch = 19, col = rgb(0, 0, 0, opacity),
+             xlab = '', ylab = 'AVGPAY')
+        box()
+        grid()
+    }
+
+    par(mfrow = c(4, 2))
+
+    draw.subfig(max(s), 1)
+    draw.subfig(200000, 0.01)
+    draw.subfig(100000, 0.012)
+    draw.subfig(50000, 0.014)
+    draw.subfig(30000, 0.016)
+    draw.subfig(20000, 0.018)
+    draw.subfig(10000, 0.020)
+    draw.subfig(5000, 0.020)
+}
+
+plot.d1.avgpay.2 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    avgpay <- s[s > 0] / dat[s > 0, 'TIMES']
+    s <- avgpay
+
+    draw.subfig <- function(s.max, opacity) {
+        ss <- s[s <= s.max]
+        par(mar = c(4, 5, 1, 1))
+        hist(ss, breaks = s.max / 100, xlab = 'AVGPAY', main = '')
+        box()
+    }
+
+    par(mfrow = c(4, 2))
+
+    draw.subfig(max(s), 1)
+    draw.subfig(200000, 0.01)
+    draw.subfig(100000, 0.012)
+    draw.subfig(50000, 0.014)
+    draw.subfig(30000, 0.016)
+    draw.subfig(20000, 0.018)
+    draw.subfig(10000, 0.020)
+    draw.subfig(5000, 0.020)
+}
+
+plot.d1.avgpay.3 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    avgpay <- s[s > 0] / dat[s > 0, 'TIMES']
+    s <- avgpay
+
+    nig.alpha <- 1.775520e-03
+    nig.beta <- 1.746044e-03
+    nig.delta <- 3.335125e+02
+    nig.mu <- 6.217342e+02
+
+    require(lmom)
+    gamma.par <- pelgam(samlmu(s))
+    gamma.rate <- gamma.par[1]
+    gamma.shape <- gamma.par[2]
+
+    draw.subfig <- function(s.max, opacity) {
+        ss <- s[s <= s.max]
+        par(mar = c(4, 5, 1, 1))
+        hist(ss, breaks = s.max / 100, freq = F,
+             border = 'grey', col = 'grey', xlab = 'AVGPAY', main = '')
+        legend('topright', lty = c(1, 1), col = c('red', 'blue'),
+               legend = c('Normal-inverse Gaussian', 'Gamma'))
+        x <- seq(0, s.max, length.out = 1000)
+        lines(x, dnig(x, nig.alpha, nig.beta, nig.delta, nig.mu), col = 'red')
+        lines(x, dgamma(x, gamma.shape, gamma.rate), col = 'blue')
+        box()
+    }
+
+    par(mfrow = c(4, 2))
+
+    draw.subfig(max(s), 1)
+    draw.subfig(200000, 0.01)
+    draw.subfig(100000, 0.012)
+    draw.subfig(50000, 0.014)
+    draw.subfig(30000, 0.016)
+    draw.subfig(20000, 0.018)
+    draw.subfig(10000, 0.020)
+    draw.subfig(5000, 0.020)
+}
+
+plot.d1.comcode <-
+function(dat, do.sort = FALSE)
+{
+    d <- dat[, 'COMCODE']
+    x <- table(d)
+    if (do.sort)
+      x <- sort(x, T)
+    barplot(x, cex.names = 0.8, space = 1, ylim = c(0, 25000),
+    xlab = 'Company code', ylab = 'Number of policies')
+    n <- length(x)
+    text(1: n * 2 - 0.5, x + 500, x, cex = 0.6)
+    box()
+    grid()
+}
+
+plot.d1.exhaustscale <-
+function(dat)
+{
+    x <- dat$EXHAUSTSCALE
+    hist(x[x < 2000], breaks = seq(0, 20, 0.1), xlab = 'EXHAUSTSCALE',
+         main = 'Histogram of EXHAUSTSCALE')
+    box()
+    grid()
+}
+
+plot.d1.sumpay.1 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    s <- s[s > 0]
+
+    draw.subfig <- function(s.max, opacity) {
+        ss <- s[s <= s.max]
+        par(mar = c(3, 5, 1, 1))
+        plot(ss, pch = 19, col = rgb(0, 0, 0, opacity),
+             xlab = '', ylab = 'SUMPAY')
+        box()
+        grid()
+    }
+
+    par(mfrow = c(4, 2))
+
+    draw.subfig(max(s), 1)
+    draw.subfig(200000, 0.01)
+    draw.subfig(100000, 0.012)
+    draw.subfig(50000, 0.014)
+    draw.subfig(30000, 0.016)
+    draw.subfig(20000, 0.018)
+    draw.subfig(10000, 0.020)
+    draw.subfig(5000, 0.020)
+}
+
+plot.d1.sumpay.2 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    s <- s[s > 0]
+
+    draw.subfig <- function(s.max, opacity) {
+        ss <- s[s <= s.max]
+        par(mar = c(4, 5, 1, 1))
+        hist(ss, breaks = s.max / 100, xlab = 'SUMPAY', main = '')
+        box()
+    }
+
+    par(mfrow = c(4, 2))
+
+    draw.subfig(max(s), 1)
+    draw.subfig(200000, 0.01)
+    draw.subfig(100000, 0.012)
+    draw.subfig(50000, 0.014)
+    draw.subfig(30000, 0.016)
+    draw.subfig(20000, 0.018)
+    draw.subfig(10000, 0.020)
+    draw.subfig(5000, 0.020)
+}
+
+plot.d1.sumpay.3 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    s <- s[s > 0]
+
+    nig.alpha <- 2.937681e-03
+    nig.beta <-2.902337e-03
+    nig.delta <- 4.753984e+02
+    nig.mu <- 4.794723e+02
+
+    require(lmom)
+    gamma.par <- pelgam(samlmu(s))
+    gamma.rate <- gamma.par[1]
+    gamma.shape <- gamma.par[2]
+
+    draw.subfig <- function(s.max, opacity) {
+        ss <- s[s <= s.max]
+        par(mar = c(4, 5, 1, 1))
+        hist(ss, breaks = s.max / 100, freq = F,
+             border = 'grey', col = 'grey', xlab = 'SUMPAY', main = '')
+        legend('topright', lty = c(1, 1), col = c('red', 'blue'),
+               legend = c('Normal-inverse Gaussian', 'Gamma'))
+        x <- seq(0, s.max, length.out = 1000)
+        lines(x, dnig(x, nig.alpha, nig.beta, nig.delta, nig.mu), col = 'red')
+        lines(x, dgamma(x, gamma.shape, gamma.rate), col = 'blue')
+        box()
+    }
+
+    par(mfrow = c(4, 2))
+
+    draw.subfig(max(s), 1)
+    draw.subfig(200000, 0.01)
+    draw.subfig(100000, 0.012)
+    draw.subfig(50000, 0.014)
+    draw.subfig(30000, 0.016)
+    draw.subfig(20000, 0.018)
+    draw.subfig(10000, 0.020)
+    draw.subfig(5000, 0.020)
+}
+
+plot.d1.sumpay.4 <-
+function(dat)
+{
+    s <- dat[, 'SUMPAY']
+    s <- sort(s[s > 0])
+
+    par(mfrow = c(2, 1))
+
+    par(mar = c(4, 5, 1, 1))
+    plot(s, cumsum(s) / sum(s), type = 'o',
+         xlab = 'max(SUMPAY)', ylab = 'Percentage in total pay')
+    grid()
+
+    s <- s[s <= 200000]
+    par(mar = c(4, 5, 1, 1))
+    plot(s, cumsum(s) / sum(s), type = 'o',
+         xlab = 'max(SUMPAY)', ylab = 'Percentage in total pay')
+    grid()
+}
+
+plot.d1.times.1 <-
+function(dat)
+{
+    d <- dat[, 'TIMES']
+    x <- table(d)
+    barplot(x, ylim = c(0, max(x) + 5000), space = 0.5,
+    xlab = 'Pay times', ylab = 'Number of policies')
+    n <- length(x)
+    text(1: n * 1.5 - 0.5, x, x, pos = 3)
+    box()
+}
+
+plot.d1.times.2 <-
+function(dat)
+{
+    d <- dat[, 'TIMES']
+    x <- table(d)
+    x <- x / sum(x)
+    barplot(x, ylim = c(0, 0.7), space = 0.5,
+    xlab = 'Pay times',
+    ylab = 'Probability (empirical vs. estimated poisson distribution')
+    n <- length(x)
+
+    lambda <- (mean(d) + var(d)) / 2
+    x.fit <- dpois(0: (n-1), lambda)
+    lines(1: n * 1.5 - 0.5, x.fit, type = 'b')
+
+    text(3, 0.6, pos = 4, 'Bar: empirical probability mass function')
+    text(3, 0.55, pos = 4, 'Line: estimated poission distribution mass function')
+    text(8, 0.3, substitute(lambda == l, list(l = lambda)))
+
+    box()
+    grid()
+}
+
+plot.d1.useyears <-
+function(dat)
+{
+    x <- dat$USEYEARS
+    hist(x, xlab = 'USEYEARS', prob = T,
+         main = 'Histogram of USEYEARS and Estimated Geometric Distribution')
+    p <- coef(fitdistr(x, 'Geometric'))
+    lines(0: max(x), dgeom(0: max(x), p), col = 'red')
+    text(10, 0.3, paste('p = ', p, sep = ''))
+    box()
+    grid()
+}
+
+plot.d1.deprecation <-
+function(dat)
+{
+    deprecation <- (dat$PURCHASEPRICE - dat$ACTUALVALUE) /
+                    dat$PURCHASEPRICE
+    plot(dat$USEYEARS, deprecation, pch = 1,
+         xlab = 'USEYEARS', ylab = 'Total Deprecation Ratio')
+    legend('bottomright', legend = c('All cars', 'Secondhand cars'),
+           pch = c(1, 3), col = c('black', 'red'))
+    points(dat$USEYEARS[dat$SECONDHANDCARFLAG == 1],
+           deprecation[dat$SECONDHANDCARFLAG == 1],
+           pch = 3, col = "red", cex = 0.5)
+}
+
+plot.d1.purchaseprice <-
+function(dat)
+{
+    x <- dat$PURCHASEPRICE
+    hist(x[x < 1000000], breaks = seq(0, 1000000, 10000), xlab = 'PURCHASEPRICE',
+         main = 'Histogram of PURCHASEPRICE')
+    box()
+}
+```
+
+## 1 简介
+
+本报告以0.2版本的D1数据为基础，进行一系列基础统计分析，记录分析结果。主要目的是：1）进一步理解数据；2）观察数据质量；3）帮助完善D0至D1的数据预处理过程。
+
+本报告使用的数据为储月华于2013年8月6日生成的D1数据，格式为CSV，文件名为HT-D1-v0.2.csv。本数据集有`r ncol(data)`个字段和`r nrow(data)`条记录。字段名称与意义见表 1。
+
+*注意：*从2.1.3开始，所有分析将仅基于险种代码（RISKCODE）为1224且承保月数（INSUREDMONTH）精确等于12的保单，共`r nrecords`条数据。
+
+``` {r referenceTable, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+a <- data.frame(
+    ref1 = c('POLICYNO', 'RISKCODE', 'KINDCODE', 'COMCODE', 'TIMES', 'SUMPAY', 'USENATURECODE', 'SEATCOUNT', 'EXHAUSTSCALE', 'PROPERTY', 'NEWCARFLAG', 'RUNAREACODE', 'COUNTRYNATURE', 'USEYEARS'),
+    meaning1 = c('保单号', '险种代码', '险别代码', '分公司', '赔付次数', '赔付金额', '使用性质', '座位数', '排量', '所属性质', '新车标志', '行驶区域代码', '国产进口', '使用时间'),
+    ref2 = c('SECODEHANDCARFLAG', 'CARTYPE', 'CARKINDCODE', 'BRANDNAME', 'ACTUALVALUE', 'PURCHASEPRICE', 'AGREEDRIVERFLAG', 'AB', 'BUSINESSNATURE', 'RENEWALFLAG', 'COMPULSORY', 'INSUREDMONTH', 'AMOUNT', 'DRIVERNUM'),
+    meaning2 = c('二手车标志', '车辆类型', '车辆种类', '车辆品牌', '实际价值', '新车购置价', '约定驾驶员', '同时投保车损三者', '业务来源', '续保标志', '投保交强', '承保月数', '承包金额', '司机数量'),
+    stringsAsFactors = FALSE)
+draw.table(a, NA, c('REF', 'MEANING', 'REF', 'MEANING'),
+           'Table 1: Variable Reference', 'Table1')
+```
+
+
+## 2 分析结果
+### 2.1 保单号（POLICYNO）
+
+POLICYNO是保单的唯一编号，由19位数字组成。经检查，数据集中没有重复的POLICYNO。
+
+### 2.2 险种代码（RISKCODE）与险别代码（KINDCODE）
+
+RISKCODE是一个类别变量，在数据集中的分布与意义见表 2。
+
+``` {r riskcodeStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+riskcode.df <- as.data.frame(table(data$RISKCODE))
+riskcode.df <- rbind(riskcode.df, nrow(data))
+riskcode.df <- data.frame(riskcode.df$Freq, percent(riskcode.df$Freq/nrow(data)))
+draw.table(riskcode.df, c('1224', '1225', '1226', '1229', 'Total'),
+           c('Count', 'Percentage'), 'Table 2: RISKCODE Analysis', 'Table2')
+```
+
+KINDCODE全部为A，表示所有保单均为机动车损失险。
+由于RISKCODE为1224的保单占到了绝大多数，以下分析将仅基于这部分数据中承保月数（INSUREDMONTH）精确等于12的保单，共`r nrecords`条数据。
+
+### 2.3 分公司（COMCODE）
+
+一共有`r length(table(data$COMCODE))`个分公司，各分公司保单数量分布不均匀，详情见图 1和图 2。排名前7位的分公司的保单数量占保单总数的`r percent(top7com.count/nrecords)`（`r top7com.count`/`r nrecords`）。
+
+``` {r comcodeHist, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.comcode(data.clean, do.sort=FALSE)
+```
+
+<center>图 1：子公司保单数量分布。按照公司代码排序。</center>
+
+``` {r comcodeHistSorted, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.comcode(data.clean, do.sort = TRUE)
+```
+
+<center>图 2：子公司保单数量分布。按照保单数量排序。</center>
+
+### 2.4 赔付次数（TIMES）
+
+数据中，赔付次数分布在`r times.min`至`r times.max`之间，详细情况见图 3。其中出险次数为7、8、9、10的保单数量极少。理论上，赔付次数的概率分布应为泊松分布。图 4对赔付次数概率的经验分布与估计分布进行了对比。经验分布概率值的计算公式为:
+
+$$
+P(TIMES=k)=\frac{(Num(Policy.TIMES==k))}{(Sum(Policy.TIMES))}
+$$
+
+由于赔付次数的平均值或方差分别为`r times.mean`和`r times.var`，两者差距较大，可以判断出赔付次数与泊松分布拟合得并不是太好。当λ取两者中值`r 0.5*(times.mean+times.var)`时，估计分布概率值的计算公式为：
+
+$$
+P(TIMES=k)=\frac{λ^k e^{-k}}{k!}=\frac{0.787^k * e^{-0.787}}{k!}
+$$
+
+可以看到，经验分布与估计分布有一定差距，尤其是在赔付次数为1时，估计值与实际值有较大差距。
+
+``` {r timesHist, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.times.1(data.clean)
+```
+
+<center>图 3：赔付次数分布</center>
+
+``` {r timesDistributionPlot, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.times.2(data.clean)
+```
+
+<center>图 4：赔付次数经验概率分布与泊松概率分布对比</center>
+
+### 2.5 赔付金额（SUMPAY）与案均赔付金额（AVGPAY）
+
+有赔付与无赔付的保单量对比见表 3。
+
+``` {r sumpayStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+sumpay.l <- c(sum(data.clean$SUMPAY == 0), sum(data.clean$SUMPAY > 0), nrecords)
+sumpay.df <- data.frame(sumpay.l, percent(sumpay.l/nrecords))
+draw.table(sumpay.df, c('SUMPAY = 0', 'SUMPAY > 0', 'Total'),
+           c('Count', 'Percentage'), 'Table 3: SUMPAY Analysis', 'Table3')
+```
+
+经检查，赔付金额为0的保单，其赔付次数都为0，说明TIMES和SUMPAY这两个字段的一致性很好。
+
+以我个人的理解，理论上，赔付金额应接近逆高斯分布或伽马分布，GLM对应这两种分布的连接函数要求响应变量为正数。也就是说，当对SUMPAY进行回归时，GLM无法处理SUMPAY为0的情况。因此，下面的分析将仅针对赔付金额大于0的保单。
+
+*讨论：*文军找到的英文书[1]中也许有答案，需要进一步研究。
+
+赔付金额和平均赔付的总体分布情况见图 5至图 8。为使观察更加细致，每个图分为8个子图，对应不同的赔付金额上限。例如，最后一个子图描述的是SUMPAY <= 5000时的数据分布情况。从图 7可以清楚地看到这份数据SUMPAY与AVGPAY的分布更接近逆高斯分布而不是伽马分布，这与 [1]中第2.8节的描述是吻合的。SUMPAY与AVGPAY的实际分布与估计分布的对比情况见图 9和图 10。
+
+*结论：*针对这份数据，应用GLM预测赔付金额时应该采用逆高斯分布对应的连接函数。
+
+另外还有一个有趣的现象。有些保单的赔付金额巨大，例如赔付金额前20位的保单，其赔付额都在200000以上，最大的一单达到了`r max(data.clean$SUMPAY)`元，但总体来看，小额赔付的总金额占全部赔付金额的大部分，具体情况见图 11。
+
+*结论：*大额赔付看似金额巨大，但实际上没有小额赔付重要，再加上预测这些outliers本来也很困难，所以我们不必特别处理这些outliers，以免费力不讨好。
+
+``` {r sumpayDistributionScatter, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.sumpay.1(data.clean)
+```
+
+<center>图 5：赔付金额总体分布情况（散点图）</center>
+
+``` {r avgpayDistributionScatter, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.avgpay.1(data.clean)
+```
+
+<center>图 6：平均赔付金额总体分布情况（散点图）</center>
+
+``` {r sumpayDistributionHist, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.sumpay.2(data.clean)
+```
+
+<center>图 7：赔付金额总体分布（直方图）</center>
+
+``` {r avgpayDistributionHist, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.avgpay.2(data.clean)
+```
+
+<center>图 8：平均赔付金额总体分布（直方图）</center>
+
+``` {r sumpayDistributionPlot, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.sumpay.3(data.clean)
+```
+
+<center>图 9：赔付金额实际分布与估计分布对比</center>
+
+``` {r avgpayDistributionPlot, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.avgpay.3(data.clean)
+```
+
+<center>图 10：平均赔付金额实际分布与估计分布对比</center>
+
+``` {r paymentPercentage, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.sumpay.4(data.clean)
+```
+
+<center>图 11：小额赔付总金额占全部赔付总金额比例。横坐标为赔付上限，纵坐标为所有低于赔付上限的赔付总金额占占全部赔付总金额比例。</center>
+
+### 2.6 使用性质（USERNATURECODE）
+
+所有保单的使用性质均为8A，即家庭自用。
+
+### 2.7 座位数（SEATCOUNT）
+
+从表 4可以看到，绝大部分车辆的座位数是5、7、8，总比例约为97%，其中5座车的比例高达88%；有一小部分车辆座位数是4、6、9、11、2、10，总比例约为3%；其它车辆总比例不到0.1%。按照保监会分类，6座以下，6-10座，10座以上分类即可。
+
+``` {r seatCountStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+seatcount.t <- table(data.clean$SEATCOUNT)
+seatcount.df <- data.frame(seat = as.integer(names(seatcount.t)),
+                           count = as.vector(seatcount.t))
+draw.table(t(seatcount.df), c('SEATCOUNT', 'Count'), NA,
+           'Table 4: SEATCOUNT Analysis', 'Table4')
+```
+
+### 2.8 排量（EXHAUSTSCALE）
+
+车辆排量一般分布在0到8之间。有4辆车排量高达2021，判断为数据有误，应为2.021。其余车的排量分布见图 12。排量约为1.6、2.0和1.8的车辆数量最多。
+
+*讨论：*在应用GLM时，这个字段应按照范围分段，具体分段方式需进一步研究。为了减少段数，是否可以采用非均匀分段方式？暂定为按照如下方式分段：(0, 1.0], (1, 1.5], (1.5, 1.6], (1.6, 1.8], (1.8, 2.0], (2.0, 3.0], (3.0, INF]。
+
+``` {r exhaustscaleHist, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.exhaustscale(data.clean)
+```
+
+<center>图 12：车辆排量分布</center>
+
+### 2.9 所属性质（PROPERTY）
+
+车辆所属性质的分布见。其中， PROPERTY值04的保单比例达99.84%。04的意义是私人。
+
+``` {r propertyStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+property.df <- as.data.frame(table(data.clean$PROPERTY))
+property.df <- rbind(property.df, nrecords)
+property.df <- data.frame(property.df$Freq, percent(property.df$Freq/nrecords))
+draw.table(property.df, c('01', '02', '03', '04', '06', '12', '8A', 'Total'),
+           c('Count', 'Percentage'), 'Table 5: PROPERTY Analysis', 'Table5')
+```
+
+### 2.10 新车标志（NEWCARFLAG）
+
+该字段值为0或1。0代表旧车，数量为`r oldcar.count`，比例为`r percent(oldcar.count/nrecords)`；1代表新车，数量为`r newcar.count`， 比例为`r percent(newcar.count/nrecords)`。
+
+### 2.11 行驶区域代码（RUNAREACODE）
+
+这份数据中，该字段值仅有3和4两个值。3代表省内行驶，数量为`r provincewide.count`，比例为`r percent(provincewide.count/nrecords)`；4代表国内行驶，数量为`r nationwide.count`，比例为`r percent(nationwide.count/nrecords)`。
+
+### 2.12 国产进口（COUNTRYNATURE）
+
+该字段值的分布情况见表 6：国产进口分布。
+
+``` {r countrynatureStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+countryACount <- sum(data.clean$COUNTRYNATURE == 'A')
+countryBCount <- sum(data.clean$COUNTRYNATURE == 'B')
+countryCCount <- sum(data.clean$COUNTRYNATURE == 'C')
+countryNACount <- nrecords - countryACount - countryBCount - countryCCount
+countrynature.l <- c(countryACount, countryBCount, countryCCount,
+                     countryNACount, nrecords)
+country.df <- data.frame(countrynature.l, percent(countrynature.l/nrecords))
+draw.table(country.df, c('A', 'B', 'C', 'Others', 'Total'),
+           c('Count', 'Percentage'), 'Table 6: COUNTRYNATURE Analysis', 'Table6')
+```
+
+### 2.13 使用时间（USEYEARS）
+
+使用时间以年为单位，精确到1整年。从图 13可以看出，使用时间大体呈几何分布，即离散的指数分布，但使用年限为0的车辆数偏高。
+
+使用时间为0的车辆有30874辆，但其中有8268辆没有标记为新车；此外，还有33辆车使用年限大于0，但被标记为新车，详情见表 7。
+
+*讨论：*USEYEARS与NEWCARFLAG可能有些不一致，是否是因为USEYEARS本身应该为精确到月，小于9个月则认为是新车？我推测精确到月的使用时间是可以得到的，并且新车标志就是通过精确的使用时间计算得到的。
+
+``` {r newcarStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+countYear0New1 <- sum(data.clean$USEYEARS == 0 & data.clean$NEWCARFLAG == 1)
+countYear0New0 <- sum(data.clean$USEYEARS == 0 & data.clean$NEWCARFLAG == 0)
+countYearNot0New1 <- sum(data.clean$USEYEARS > 0 & data.clean$NEWCARFLAG == 1)
+countYearNot0New0 <- sum(data.clean$USEYEARS > 0 & data.clean$NEWCARFLAG == 0)
+year0 <- c(countYear0New1, countYear0New0, countYear0New1+countYear0New0)
+yearNot0 <- c(countYearNot0New1, countYearNot0New0,
+              countYearNot0New1+countYearNot0New0)
+total <- c(countYear0New1+countYearNot0New1,
+           countYear0New0+countYearNot0New0, nrecords)
+useyear.df <- data.frame(year0, yearNot0, total)
+draw.table(useyear.df, c('NEWCARFLAG == 1', 'NEWCARFLAG == 0', 'Total'),
+           c('USEYEAR == 0', 'USEYEAR > 0', 'Total'),
+           'Table 7: USEYEAR Analysis', 'Table7')
+```
+
+``` {r useyearHist, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.useyears(data.clean)
+```
+
+<center>图 13：使用年限分布与估计几何分布</center>
+
+### 2.14 二手车标志（SECONDHANDCARFLAG）
+
+该字段取值为0或1。1代表二手车，一共有`r sechand.count`辆，比例仅为`r sechand.count/nrecords`，其中二手新车（SECONDHANDCARFLAG == 1 and NEWCARFLAG == 1）的数量为`r sechand.new.count`。暂定建模时不使用该字段。
+
+### 2.15 车辆类型（CARTYPE）
+
+请储月华协助将该字段的取值处理为英文或数字。
+
+### 2.16 车辆种类（CARKINDCODE）
+
+所有保单的车辆种类都是A0，代表客车。
+
+### 2.17 车辆品牌（BRANDNAME）
+
+请储月华协助将该字段的取值处理为英文或数字。
+
+### 2.18 实际价值（ACTUALVALUE）与新车购置价（PURCHASEPRICE）
+
+通过观察图 14，可以发现实际价值（很可能）是通过一个简单公式，从新车购置价和使用时间计算得到的。计算方法是设定车辆折旧年限为11年，每年按照固定的比例降低实际价值，直到降低到新车购置价的20%为止。每年的折旧比例为0.8/11=0.727。因此，我们可以推测出下面这个公式：
+
+$$
+Ratio=1-\frac{ACTUALVALUE}{PURCHASEPRICE} = \left\{
+  \begin{array}{lr}
+    0.727*USEYEARS & : if USEYEARS\leq 11\\
+    0.8 & : if USEYEARS> 11
+  \end{array}
+\right.
+$$
+
+``` {r deprecationPlot, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.deprecation(data.clean)
+```
+
+<center>图 14：总折旧比例与使用时间的关系</center>
+
+另外可以看到，如果使用时间能够精确到月，则图 14中使用时间未超过11年的部分很可能会呈一条直线。
+
+*问题：*是否能得到精确到月的使用时间？
+
+若大部分的ACTUALVALUE是通过PRUCHASEPRICE和USEYEARS进行线性组合计算得来，则若后两个字段已经在模型中使用，加入ACTUALVALUE字段不会提升模型性能。
+新车购置价的分布见图 15。
+
+``` {r purchasepriceHist, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.ext='png', fig.path='./images/'}
+plot.d1.purchaseprice(data.clean)
+```
+
+<center>图 15：新车购置价分布</center>
+
+### 2.19 约定驾驶员（AGREEDDRIVERFLAG）
+
+该字段取值为0或1。0代表无约定驾驶员，数量为`r agreeddriver.count`， 比例为`r percent(agreeddriver.count/nrecords)`；1代表有约定驾驶员，数量为`r nonagreeddriver.count`，比例为`r percent(nonagreeddriver.count/nrecords)`。
+
+### 2.20 同时投保车损三者（AB）
+
+该字段取值为A或AB。A代表仅车损险，数量为`r a.count`，比例为`r percent(a.count/nrecords)`；AB代表同时投保车损险和三者险，数量为`r ab.count`， 比例为`r percent(ab.count/nrecords)`。
+
+### 2.21 业务来源（BUSINESSNATURE）
+
+该字段取值为0, 1, 2, 3, 4, 6，具体分布见表 8。
+
+``` {r businessStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+business.df <- as.data.frame(table(data.clean$BUSINESSNATURE))
+business.df <- rbind(business.df, nrecords)
+business.df <- data.frame(business.df$Freq, percent(business.df$Freq/nrecords))
+draw.table(business.df, c('0', '1', '2', '3', '4', '6', 'Total'),
+           c('Count', 'Percentage'), 'Table 8: BUSINESSNATURE Analysis', 'Table8')
+```
+
+### 2.22 续保标志（RENEWALFLAG）
+
+该字段取值为0, 1, 2，具体分布见表 9
+商业续商业给1 交强续交强给2 否则给0
+
+``` {r renewalStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+renewal.df <- as.data.frame(table(data.clean$RENEWALFLAG))
+renewal.df <- rbind(renewal.df, nrecords)
+renewal.df <- data.frame(renewal.df$Freq, percent(renewal.df$Freq/nrecords))
+draw.table(renewal.df, c('0', '1', '2', 'Total'),
+           c('Count', 'Percentage'), 'Table 9: RENEWALFLAG Analysis', 'Table9')
+```
+
+### 2.23 投保交强（COMPULSORY）
+
+该字段取值为0或1。0代表未在同一公司投保交强险，数量为`r noncomp.count`，比例为`r percent(noncomp.count/nrecords)`；1代表在同一公司投保交强险，数量为`r comp.count`，比例为`r percent(comp.count/nrecords)`。
+
+### 2.24 承保月数（INSUREDMONTH）
+
+本报告仅分析INSUREDMONTH精确等于12的保单。
+
+### 2.25 承保金额（AMOUNT）
+
+承保金额基本上与新车购置价保持一致，具体情况见表 10。
+
+``` {r amountStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+xover1  <- sum(data.clean$AMOUNT/data.clean$PURCHASEPRICE >  1, na.rm=TRUE)
+xequal1 <- sum(data.clean$AMOUNT/data.clean$PURCHASEPRICE == 1, na.rm=TRUE)
+xunder1 <- sum(data.clean$AMOUNT/data.clean$PURCHASEPRICE <  1, na.rm=TRUE)
+xNA <- sum(is.na(data.clean$AMOUNT))
+amount.df <- data.frame(c(xover1, xequal1, xunder1, xNA))
+amount.df <- rbind(amount.df, nrecords)
+colnames(amount.df) <- 'Freq'
+amount.df <- data.frame(amount.df$Freq, percent(amount.df$Freq/nrecords))
+draw.table(amount.df, c('x > 1.0', 'x == 1.0', 'x < 1.0', 'NA', 'Total'),
+           c('Count', 'Percentage'), 'Table 10: AMOUNT Analysis', 'Table10')
+```
+
+### 2.26 司机数量（DRIVERNUM）
+
+该字段取值为0, 1, 2, 3。0代表不限司机数量。
+从表11可以看出DRIVERNUM与AGREEDDRIVEFLAG关系密切。
+
+``` {r drivernumStats, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+zz <- sum(data.clean$AGREEDRIVERFLAG == 0 & data.clean$DRIVERNUM == 0)
+zo <- sum(data.clean$AGREEDRIVERFLAG == 0 & data.clean$DRIVERNUM >  0)
+oz <- sum(data.clean$AGREEDRIVERFLAG == 1 & data.clean$DRIVERNUM == 0)
+oo <- sum(data.clean$AGREEDRIVERFLAG == 1 & data.clean$DRIVERNUM >  0)
+drivernum.df <- data.frame(c(zz, oz, zz+oz), c(zo, oo, zo+oo),
+                            c(zz+zo, oz+oo, nrecords))
+draw.table(drivernum.df,
+           c('AGREEDDRIVEFLAG == 0', 'AGREEDDRIVEFLAG == 1', 'Total'),
+           c('DRIVERNUM == 0', 'DRIVERNUM > 0', 'Total'),
+           'Table 11: DRIVERNUM Analysis',
+           'Table11')
+```
+
+
+## 3 参考文献
+
+[1] Generalized Linear Models for Insurance Data. Piet de Jong and Gillian Z. Heller.
